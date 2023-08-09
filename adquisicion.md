@@ -1,4 +1,129 @@
+# COMANDOS EN LINUX PARA ADQUISICIÓN DE EVIDENCIA
 
+## Mapear una unidad 
+
+El primer paso es Conectar un USB Stick (Memoria USB), en una PC Virtual con VMWARE el montaje se realiza en automático o bien Ingresando a VM>Removable Devices>[USB Device], donde [USB Device] hace referencia a tu dispositivo. Si no fuera una PC virtual y es el sistema operativo propiamente dicho es necesario montar el USB, Discos Duros Externos o unidades en general, para el montaje y desmontaje de unidades referirse al Anexo 1 de este documento. En mi caso, como tengo una VM solo poniendo el USB y habilitando esta opción puedo conectar el USB al equipo
+
+![image](https://user-images.githubusercontent.com/50930193/135363013-b1e684f9-bcdb-4a55-80ca-3fd308fe6391.png)
+
+En seguida, se tiene que listar las unidades del sistema operativo. Para ello, ejecutar el siguiente comando para identificar cual es el nombre asignado al dispositivo USB, por ejemplo (/dev/sdc). Con esta información se procede a realizar la captura de la imagen forense.
+
+```
+$sudo fdisk -l
+```
+
+![image](https://user-images.githubusercontent.com/50930193/135363228-1b3bb03b-bcee-46f9-a7ad-6d9b90a705b2.png)
+
+## AdquisicIón
+
+### COMANDO: dd
+dd es un comando en Unix e incluido por defecto en diversos sistemas GNU/Linux cuyo principal propósito es convertir y copiar un archivo. Es una de las herramientas más antiguas utilizadas para crear réplicas o imágenes forenses.
+
+Pero antes hay que crear el hash a la unidad del usb
+```
+$sudo md5sum /dev/sdb1 > /tmp/img_sdb1.md5
+```
+
+Generará el archivo siguiente:
+
+![image](https://user-images.githubusercontent.com/50930193/135363425-56ea3ebd-962a-4380-abc2-8a92e33bedca.png)
+
+ 
+
+Ahora generamos el archivo de evidencia digital
+```
+$sudo dd if=/dev/sdb1 bs=512 conv=noerror,sync of=/tmp/img_sdb1.dd
+ ```
+
+![image](https://user-images.githubusercontent.com/50930193/135363716-369915c1-b6be-477b-95f4-b3a1477570e6.png)
+
+Donde:
+| parametro | descripción |
+|-----------|-------------|
+| if        | ruta origen |
+| bs        | block size o tamaño de los bytes a copiar, 512 bytes a la vez           |
+| conv      | conversiones sobre los datos de entrada          |
+| noerror   | si hubiera error de lectura va a continuar el proceso de copia           |
+| sync      | rellenar esos sectores dañados con bytes nulos           |
+| of        | ruta destino de la imagen           |
+
+Finalmente sacamos el hash de la imagen
+ ```
+$sudo md5sum /tmp/img_sdb1.dd > /tmp/img_sdb1.dd.md5
+ ```
+
+
+
+Si todo se ha realizado correctamente se habrá creado un archivo de nombre “img_sdbc1.dd”, el cual corresponde a la imagen forense obtenida desde la unidad USB. Es decir, es una copia exacta de todo el contenido del origen, que reside ahora en un archivo. 
+
+Al comparar los hash MD5 contenidos en los archivos “img_sdc1.md5” y “img_sdc1.dd.md5, estos serán iguales, lo cual verifica la integridad y contenido exacto de la imagen forense capturada. 
+
+Se sugiere además utilizar dos hashs como mínimo, por ejemplo MD5 o SHA1
+
+ ```
+$sudo md5sum /dev/sdb1 img_sdb1.dd > img_sdb1.dd.md5
+$sudo sha1sum /dev/sdb1 img_sdb1.dd > img_sdb1.dd.sha1
+ ```
+
+NOTA: Si bien ejemplarizamos el uso del algoritmo md5 el que debería predominar es el algoritmo del sha debido a que se ha comprobado que el md5 ha sido vulnerado.
+
+Por otro lado, si se quisiera dividir la imagen, se puede combinar el comando dd con el comando Split. Esto se utiliza por ejemplo para hacerlos caber en varios CDs o DVDs
+ ```
+$sudo dd if=/dev/sdb1 bs=512 conv=sync,noerror | split -d -b 650m - /tmp/sdb_image
+ ```
+ 
+Se puede cambiar el valor ligado al –b pero se recomienda que esto no sobrepase los 2000m por los límites de FAT32, Asimismo el parámetro –d es usado para dar un orden numérico (image.01, image.02, image.03)  a las imágenes generadas, si no se usa se ordenarán alfabéticamente (image.ab, image.ac) 
+Finalmente se puede crear el hash mientras se ejecuta el comando para ello, se deberá usar el comando siguiente:
+ ```
+$sudo dd if=/dev/sdb1 bs=512 conv=sync,noerror | tee /tmp/sdb_image.img | md5sum > /tmp/sdb_image.md5
+ ```
+ 
+### COMANDO: dcfldd
+
+dcfldd es la versión mejorada de dd desarrollada por el laboratorio de cómputo forense del Departamento de Defensa de los Estados Unidos, la cual cuenta con características muy útiles para los investigadores forenses.
+
+La unidad USB ha sido detectada en “/dev/sdc1”. La opción “conv” convierte el archivo de acuerdo a la lista de palabras clave separadas por comas. “noerror” permite continuar después de errores de lectura, “sync” rellena cada bloque de entrada con “NULs”. La opción “hash” define el algoritmo a utilizar (MD5 y SHA1). La opción “hashlog” envía la salida de los hash a un archivo definido.
+
+ ```
+$ sudo dcfldd if=/dev/sdb1 of=/tmp/imagen_sdb1.dd conv=noerror,sync hash=md5,sha1 hashlog=/tmp/hashlog_img_sdb1_.txt
+ ```
+ 
+![image](https://user-images.githubusercontent.com/50930193/135364146-e17778ed-2d44-486f-b6d2-fdfec415ba32.png)
+
+ 
+
+Con el siguiente comando se procede a visualizar el archivo de nombre “/tmp/hashlog_img_sdc1_.txt”.
+```
+$ sudo cat /tmp/hashlog_img_sdb1_.txt
+```
+![image](https://user-images.githubusercontent.com/50930193/135364222-a55a4d3d-d503-4e3e-8bcf-2ac30bc241f5.png)
+ 
+
+Además del método utilizado para verificar los hashs obtenidos con los comandos md5sum y sha1sum, se puede utilizar también la misma herramienta dcfldd. La opción “vf” verifica si el archivo de nombre “/tmp/img_sdc1.dd” coincide con la entrada definida.
+```
+$ sudo dcfldd if=/dev/sdc1 vf=/tmp/img_sdc1.dd 
+```
+El mensaje expuesto por este procedimiento, indicará si los dos hashs obtenidos coinciden o no.
+
+Si coinciden:
+
+![image](https://user-images.githubusercontent.com/50930193/135364245-8aa3f555-0454-4ebe-ad4a-ef111ca276b3.png)
+
+
+No coinciden:
+
+![image](https://user-images.githubusercontent.com/50930193/135364263-4fed83ce-5a80-4af9-a118-cadc969791ae.png)
+
+ 
+#### COMANDO: dc3dd
+
+Dc3dd fue desarrollado por el DoD Cyber Crime Center y ha sido parchado por el proyecto GNU del dd command..
+```
+$ sudo dc3dd if=/dev/sdb1 of=/tmp/sdb1_image_dc3.img hash=sha1 log=/tmp/dc3dd.log
+```
+![image](https://user-images.githubusercontent.com/50930193/135364189-e2fe0bae-270c-4359-9257-b6f34de00a5e.png)
+
+ 
 
 
 
